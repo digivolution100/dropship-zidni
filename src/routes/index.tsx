@@ -129,11 +129,11 @@ function InputAndOrdersPage() {
   async function handleFile(f: File) {
     setSyncing(true);
     try {
+      // Parse file
       let rows: any[] = [];
       if (f.name.toLowerCase().endsWith(".csv")) {
-        // Coba beberapa encoding — Shopee kadang pakai UTF-8 atau Latin1
         const text = await f.text();
-        const result = Papa.parse(text, { header: true, skipEmptyLines: true, trimHeaders: true });
+        const result = Papa.parse(text, { header: true, skipEmptyLines: true });
         rows = result.data as any[];
       } else {
         const buf = await f.arrayBuffer();
@@ -146,83 +146,103 @@ function InputAndOrdersPage() {
         return;
       }
 
-      // Debug: tampilkan nama kolom yang ditemukan di console
-      const cols = Object.keys(rows[0] ?? {});
-      console.log("[Sync] Kolom ditemukan di file:", cols);
+      // Tampilkan kolom yang ditemukan untuk debug
+      const colNames = Object.keys(rows[0] ?? {});
+      console.log("[Sync] Kolom CSV:", colNames);
 
-      // Helper: ambil nilai dari row berdasarkan daftar kemungkinan nama kolom
-      function getCol(row: any, candidates: string[]): string {
+      // Fetch orders langsung dari DB (hindari stale state)
+      const { data: freshOrders, error: fetchErr } = await supabase
+        .from("orders")
+        .select("id, order_no, hpp");
+      if (fetchErr || !freshOrders) {
+        toast.error("Gagal memuat data pesanan dari database");
+        return;
+      }
+
+      // Normalisasi: hapus semua spasi & ubah ke uppercase
+      const norm = (s: string) => String(s ?? "").replace(/\s+/g, "").toUpperCase();
+
+      // Buat map: normalized_order_no → { id, hpp }
+      const dbMap = new Map(freshOrders.map((o) => [norm(o.order_no), o]));
+
+      // Cari kolom order number di CSV (case-insensitive partial match)
+      const findCol = (row: any, keywords: string[]): string => {
         for (const key of Object.keys(row)) {
-          const keyNorm = key.trim().toLowerCase().replace(/\s+/g, " ");
-          for (const c of candidates) {
-            if (keyNorm === c.toLowerCase().replace(/\s+/g, " ")) {
+          const k = key.trim().toLowerCase();
+          for (const kw of keywords) {
+            if (k === kw.toLowerCase()) return String(row[key] ?? "").trim();
+          }
+        }
+        // fallback: partial match
+        for (const key of Object.keys(row)) {
+          const k = key.trim().toLowerCase();
+          for (const kw of keywords) {
+            if (k.includes(kw.toLowerCase()) || kw.toLowerCase().includes(k)) {
               return String(row[key] ?? "").trim();
             }
           }
         }
         return "";
-      }
-
-      // Semua kemungkinan nama kolom No. Pesanan dari berbagai versi Shopee
-      const ORDER_NO_COLS = [
-        "No. Pesanan", "No Pesanan", "Nomor Pesanan", "Order ID",
-        "No. Order", "No Order", "order_no", "OrderID", "No.Pesanan",
-        "no. pesanan", "nomor pesanan", "No. pesanan",
-      ];
-
-      // Semua kemungkinan nama kolom penghasilan
-      const INCOME_COLS = [
-        "Total Penghasilan", "Total Penghasil", "Penghasilan",
-        "Total Harga Pesanan", "Harga Pesanan", "Total Pembayaran",
-        "Jumlah Penghasilan", "income", "Revenue", "Total Revenue",
-        "Total Penjualan", "Nilai Pesanan",
-      ];
-
-      // Normalisasi order_no untuk perbandingan: hapus spasi & huruf besar semua
-      const normalize = (s: string) => s.replace(/\s+/g, "").toUpperCase();
-
-      // Buat map order yang ada di DB (key = normalized order_no)
-      const orderMap = new Map(orders.map((o) => [normalize(o.order_no), o]));
+      };
 
       let matched = 0;
-      let notFound = 0;
+      let skipped = 0;
 
       for (const row of rows) {
-        const orderNoRaw = getCol(row, ORDER_NO_COLS);
-        if (!orderNoRaw) continue;
+        // Ambil No. Pesanan — prioritaskan "No. Pesanan" persis
+        const orderNo =
+          row["No. Pesanan"] ??
+          row["No.Pesanan"] ??
+          row["No Pesanan"] ??
+          row["Nomor Pesanan"] ??
+          findCol(row, ["no. pesanan", "nomor pesanan", "no pesanan"]);
 
-        const orderNoNorm = normalize(orderNoRaw);
-        const existing = orderMap.get(orderNoNorm);
+        const orderNoStr = String(orderNo ?? "").trim();
+        if (!orderNoStr) continue;
 
-        if (!existing) { notFound++; continue; }
+        const existing = dbMap.get(norm(orderNoStr));
+        if (!existing) { skipped++; continue; }
 
-        const incomeRaw = getCol(row, INCOME_COLS);
-        const income = Number(incomeRaw.replace(/[^0-9.-]/g, "")) || 0;
+        // Ambil Total Penghasilan — prioritaskan kolom eksak
+        const incomeRaw =
+          row["Total Penghasilan"] ??
+          row["Total penghasilan"] ??
+          row["total penghasilan"] ??
+          row["Penghasilan"] ??
+          findCol(row, ["total penghasilan", "penghasilan"]);
+
+        const income = Number(String(incomeRaw ?? "0").replace(/[^0-9.]/g, "")) || 0;
         const profit = income - Number(existing.hpp || 0);
 
         const { error } = await supabase
           .from("orders")
           .update({ status: "Selesai", income, profit })
           .eq("id", existing.id);
+
         if (!error) matched++;
+        else console.error("[Sync] Update error:", error.message);
       }
 
-      if (matched === 0 && notFound > 0) {
-        toast.error(
-          `0 pesanan cocok. Kolom di file: "${cols.slice(0, 4).join('", "')}". ` +
-          `Pastikan file adalah laporan penghasilan Shopee yang benar.`
-        );
+      if (matched > 0) {
+        toast.success(`✅ ${matched} pesanan berhasil diubah menjadi Selesai${skipped > 0 ? ` (${skipped} tidak cocok)` : ""}`);
       } else {
-        toast.success(`${matched} pesanan berhasil disinkron${notFound > 0 ? ` (${notFound} tidak ditemukan)` : ""}`);
+        toast.error(
+          `Tidak ada pesanan yang cocok. ` +
+          `Kolom CSV: ${colNames.slice(0, 5).join(", ")}. ` +
+          `Pastikan No. Pesanan di CSV sama persis dengan yang diinput.`
+        );
       }
+
       await load();
     } catch (err: any) {
+      console.error("[Sync] Error:", err);
       toast.error(err?.message ?? "Gagal membaca file");
     } finally {
       setSyncing(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
+
 
   // ── Delete ──
   async function confirmDelete() {
