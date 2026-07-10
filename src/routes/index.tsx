@@ -144,40 +144,45 @@ function InputAndOrdersPage() {
         }) as string[][]).map((r) => r.map((c) => String(c ?? "").trim()));
       }
 
-      // ── 2. Cari baris header: harus ada kolom "pesanan" DAN "penghasilan" sekaligus ──
-      const hasKw = (cell: string, kw: string) =>
-        cell.toLowerCase().includes(kw.toLowerCase());
+      // ── 2. Cari baris header: cari sel yang PERSIS "No. Pesanan" ──
+      const cleanCell = (c: string) => c.trim().toLowerCase().replace(/\s+/g, " ");
 
       const headerRowIdx = allRows.findIndex((row) =>
-        row.some((c) => hasKw(c, "pesanan")) &&
-        row.some((c) => hasKw(c, "penghasilan"))
+        row.some((c) => {
+          const v = cleanCell(c);
+          return v === "no. pesanan" || v === "no pesanan" || v === "nomor pesanan";
+        })
       );
 
       if (headerRowIdx === -1) {
-        const preview = allRows.slice(0, 8).map((r) => r.slice(0, 5).join(" | ")).join("\n");
-        toast.error(`Header tidak ditemukan. Preview file:\n${preview}`);
-        console.log("[Sync] Preview 8 baris pertama:", allRows.slice(0, 8));
+        // Tampilkan SEMUA baris ke console agar bisa didiagnosis
+        console.log("[Sync] SEMUA BARIS:", allRows);
+        console.log("[Sync] Cek sel yang ada 'pesanan':", allRows
+          .map((row, i) => ({ i, cells: row.filter(c => c.toLowerCase().includes("pesanan")) }))
+          .filter(x => x.cells.length > 0)
+        );
+        toast.error("Baris header 'No. Pesanan' tidak ditemukan. Cek console (F12) untuk detail.");
         return;
       }
 
       const headers = allRows[headerRowIdx];
-      console.log("[Sync] Header row ditemukan di baris", headerRowIdx, ":", headers);
+      console.log("[Sync] ✅ Header ditemukan di baris", headerRowIdx, ":", headers);
 
-      // ── 3. Cari index kolom — "No. Pesanan" dan "Total Penghasilan" ──
-      // Cari kolom yang mengandung "no" DAN "pesanan" dalam satu sel (hindari "Subtotal Pesanan")
-      const idxOrderNo = headers.findIndex((h) =>
-        hasKw(h, "no") && hasKw(h, "pesanan")
-      );
-      // Cari kolom yang mengandung "penghasilan" tapi BUKAN "subtotal"
+      // ── 3. Cari index kolom berdasarkan nama sel ──
+      const idxOrderNo = headers.findIndex((h) => {
+        const v = cleanCell(h);
+        return v === "no. pesanan" || v === "no pesanan" || v === "nomor pesanan";
+      });
+
       const idxIncome = headers.findIndex((h) =>
-        hasKw(h, "penghasilan") && !hasKw(h, "subtotal")
+        cleanCell(h).includes("penghasilan") && !cleanCell(h).includes("subtotal")
       );
 
-      console.log("[Sync] Kolom No. Pesanan di index:", idxOrderNo, "→", headers[idxOrderNo]);
-      console.log("[Sync] Kolom Penghasilan di index:", idxIncome, "→", headers[idxIncome]);
+      console.log("[Sync] Kolom No. Pesanan  →", idxOrderNo, ":", headers[idxOrderNo]);
+      console.log("[Sync] Kolom Penghasilan  →", idxIncome, ":", headers[idxIncome]);
 
       if (idxOrderNo === -1) {
-        toast.error(`Kolom No. Pesanan tidak ditemukan di baris header. Headers: ${headers.join(", ")}`);
+        toast.error(`Kolom 'No. Pesanan' tidak ditemukan. Isi header: ${headers.join(" | ")}`);
         return;
       }
 
