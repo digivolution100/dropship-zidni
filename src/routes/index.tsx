@@ -131,26 +131,90 @@ function InputAndOrdersPage() {
     try {
       let rows: any[] = [];
       if (f.name.toLowerCase().endsWith(".csv")) {
+        // Coba beberapa encoding — Shopee kadang pakai UTF-8 atau Latin1
         const text = await f.text();
-        rows = Papa.parse(text, { header: true, skipEmptyLines: true }).data as any[];
+        const result = Papa.parse(text, { header: true, skipEmptyLines: true, trimHeaders: true });
+        rows = result.data as any[];
       } else {
         const buf = await f.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
         rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
       }
+
+      if (rows.length === 0) {
+        toast.error("File kosong atau format tidak dikenali");
+        return;
+      }
+
+      // Debug: tampilkan nama kolom yang ditemukan di console
+      const cols = Object.keys(rows[0] ?? {});
+      console.log("[Sync] Kolom ditemukan di file:", cols);
+
+      // Helper: ambil nilai dari row berdasarkan daftar kemungkinan nama kolom
+      function getCol(row: any, candidates: string[]): string {
+        for (const key of Object.keys(row)) {
+          const keyNorm = key.trim().toLowerCase().replace(/\s+/g, " ");
+          for (const c of candidates) {
+            if (keyNorm === c.toLowerCase().replace(/\s+/g, " ")) {
+              return String(row[key] ?? "").trim();
+            }
+          }
+        }
+        return "";
+      }
+
+      // Semua kemungkinan nama kolom No. Pesanan dari berbagai versi Shopee
+      const ORDER_NO_COLS = [
+        "No. Pesanan", "No Pesanan", "Nomor Pesanan", "Order ID",
+        "No. Order", "No Order", "order_no", "OrderID", "No.Pesanan",
+        "no. pesanan", "nomor pesanan", "No. pesanan",
+      ];
+
+      // Semua kemungkinan nama kolom penghasilan
+      const INCOME_COLS = [
+        "Total Penghasilan", "Total Penghasil", "Penghasilan",
+        "Total Harga Pesanan", "Harga Pesanan", "Total Pembayaran",
+        "Jumlah Penghasilan", "income", "Revenue", "Total Revenue",
+        "Total Penjualan", "Nilai Pesanan",
+      ];
+
+      // Normalisasi order_no untuk perbandingan: hapus spasi & huruf besar semua
+      const normalize = (s: string) => s.replace(/\s+/g, "").toUpperCase();
+
+      // Buat map order yang ada di DB (key = normalized order_no)
+      const orderMap = new Map(orders.map((o) => [normalize(o.order_no), o]));
+
       let matched = 0;
+      let notFound = 0;
+
       for (const row of rows) {
-        const orderNo = String(row["No. Pesanan"] ?? row["No Pesanan"] ?? row["order_no"] ?? "").trim();
-        const incomeRaw = row["Total Penghasilan"] ?? row["Total Penghasil"] ?? row["income"] ?? 0;
-        const income = Number(String(incomeRaw).replace(/[^0-9.-]/g, "")) || 0;
-        if (!orderNo) continue;
-        const existing = orders.find((o) => o.order_no === orderNo);
-        if (!existing) continue;
+        const orderNoRaw = getCol(row, ORDER_NO_COLS);
+        if (!orderNoRaw) continue;
+
+        const orderNoNorm = normalize(orderNoRaw);
+        const existing = orderMap.get(orderNoNorm);
+
+        if (!existing) { notFound++; continue; }
+
+        const incomeRaw = getCol(row, INCOME_COLS);
+        const income = Number(incomeRaw.replace(/[^0-9.-]/g, "")) || 0;
         const profit = income - Number(existing.hpp || 0);
-        const { error } = await supabase.from("orders").update({ status: "Selesai", income, profit }).eq("id", existing.id);
+
+        const { error } = await supabase
+          .from("orders")
+          .update({ status: "Selesai", income, profit })
+          .eq("id", existing.id);
         if (!error) matched++;
       }
-      toast.success(`${matched} pesanan berhasil disinkron`);
+
+      if (matched === 0 && notFound > 0) {
+        toast.error(
+          `0 pesanan cocok. Kolom di file: "${cols.slice(0, 4).join('", "')}". ` +
+          `Pastikan file adalah laporan penghasilan Shopee yang benar.`
+        );
+      } else {
+        toast.success(`${matched} pesanan berhasil disinkron${notFound > 0 ? ` (${notFound} tidak ditemukan)` : ""}`);
+      }
       await load();
     } catch (err: any) {
       toast.error(err?.message ?? "Gagal membaca file");
