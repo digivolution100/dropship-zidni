@@ -129,110 +129,82 @@ function InputAndOrdersPage() {
   async function handleFile(f: File) {
     setSyncing(true);
     try {
-      let rows: Record<string, string>[] = [];
+      // ── 1. Baca file jadi array-of-array ──
+      let allRows: string[][] = [];
 
       if (f.name.toLowerCase().endsWith(".csv")) {
         const text = await f.text();
-
-        // Parse tanpa header dulu → dapat raw array per baris
-        const raw = Papa.parse<string[]>(text, { header: false, skipEmptyLines: true });
-        const allRows = raw.data;
-
-        // Cari baris yang mengandung "No. Pesanan" sebagai header sebenarnya
-        const headerRowIdx = allRows.findIndex((row) =>
-          row.some((cell) => String(cell).trim().toLowerCase().includes("no. pesanan") ||
-                             String(cell).trim().toLowerCase().includes("no pesanan"))
-        );
-
-        if (headerRowIdx === -1) {
-          const sample = allRows.slice(0, 3).map(r => r.join(" | ")).join("\n");
-          toast.error(`Kolom "No. Pesanan" tidak ditemukan. 3 baris pertama:\n${sample}`);
-          return;
-        }
-
-        // Ambil header dari baris yang ditemukan
-        const headers = allRows[headerRowIdx].map((h) => String(h).trim());
-        // Baris data = semua baris setelah header
-        const dataRows = allRows.slice(headerRowIdx + 1);
-
-        // Jadikan object per baris
-        rows = dataRows.map((row) => {
-          const obj: Record<string, string> = {};
-          headers.forEach((h, i) => { obj[h] = String(row[i] ?? "").trim(); });
-          return obj;
-        });
-
+        const parsed = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false });
+        allRows = parsed.data.map((r) => r.map((c) => String(c ?? "").trim()));
       } else {
-        // Excel: sama — cari baris header dulu
         const buf = await f.arrayBuffer();
-        const wb = XLSX.read(buf, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const allRows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as string[][];
-
-        const headerRowIdx = allRows.findIndex((row) =>
-          row.some((cell) => String(cell).trim().toLowerCase().includes("no. pesanan") ||
-                             String(cell).trim().toLowerCase().includes("no pesanan"))
-        );
-
-        if (headerRowIdx === -1) {
-          toast.error(`Kolom "No. Pesanan" tidak ditemukan di file Excel.`);
-          return;
-        }
-
-        const headers = allRows[headerRowIdx].map((h) => String(h).trim());
-        const dataRows = allRows.slice(headerRowIdx + 1);
-        rows = dataRows.map((row) => {
-          const obj: Record<string, string> = {};
-          headers.forEach((h, i) => { obj[h] = String(row[i] ?? "").trim(); });
-          return obj;
-        });
+        const wb  = XLSX.read(buf, { type: "array" });
+        allRows = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {
+          header: 1, defval: "", raw: false,
+        }) as string[][]).map((r) => r.map((c) => String(c ?? "").trim()));
       }
 
-      if (rows.length === 0) {
-        toast.error("Tidak ada data setelah header ditemukan.");
+      // ── 2. Cari baris header (baris yang ada kata "pesanan") ──
+      const hasKw = (cell: string, kw: string) =>
+        cell.toLowerCase().includes(kw.toLowerCase());
+
+      const headerRowIdx = allRows.findIndex((row) =>
+        row.some((c) => hasKw(c, "pesanan"))
+      );
+
+      if (headerRowIdx === -1) {
+        // Debug: tampilkan 5 baris pertama
+        const preview = allRows.slice(0, 5).map((r) => r.slice(0, 6).join(" | ")).join("\n");
+        toast.error(`Kolom "No. Pesanan" tidak ditemukan.\nPreview:\n${preview}`);
+        console.log("[Sync] Preview 5 baris pertama:", allRows.slice(0, 5));
         return;
       }
 
-      const colNames = Object.keys(rows[0]);
-      console.log("[Sync] Header sebenarnya:", colNames);
+      const headers = allRows[headerRowIdx];
+      console.log("[Sync] Header row ditemukan di baris", headerRowIdx, ":", headers);
 
-      // Fetch orders dari DB
+      // ── 3. Cari index kolom "No. Pesanan" dan "Total Penghasilan" ──
+      const colIdx = (keyword: string): number =>
+        headers.findIndex((h) => hasKw(h, keyword));
+
+      const idxOrderNo  = colIdx("pesanan");
+      const idxIncome   = colIdx("penghasilan");
+
+      console.log("[Sync] Kolom No. Pesanan di index:", idxOrderNo, "→", headers[idxOrderNo]);
+      console.log("[Sync] Kolom Penghasilan di index:", idxIncome,  "→", headers[idxIncome]);
+
+      if (idxOrderNo === -1) {
+        toast.error("Kolom No. Pesanan tidak ditemukan. Cek console untuk detail.");
+        return;
+      }
+
+      // ── 4. Fetch orders dari DB ──
       const { data: freshOrders, error: fetchErr } = await supabase
-        .from("orders")
-        .select("id, order_no, hpp");
+        .from("orders").select("id, order_no, hpp");
       if (fetchErr || !freshOrders) {
-        toast.error("Gagal memuat data pesanan dari database");
+        toast.error("Gagal memuat pesanan dari database");
         return;
       }
 
       const norm = (s: string) => String(s ?? "").replace(/\s+/g, "").toUpperCase();
       const dbMap = new Map(freshOrders.map((o) => [norm(o.order_no), o]));
 
-      let matched = 0;
-      let skipped = 0;
+      // ── 5. Proses baris data (lewati baris summary/kosong) ──
+      let matched = 0, skipped = 0;
 
-      for (const row of rows) {
-        // Ambil No. Pesanan
-        const orderNoStr = (
-          row["No. Pesanan"] ??
-          row["No Pesanan"] ??
-          row["Nomor Pesanan"] ??
-          ""
-        ).trim();
-        if (!orderNoStr) continue;
+      for (const row of allRows.slice(headerRowIdx + 1)) {
+        const orderNoStr = String(row[idxOrderNo] ?? "").trim();
+
+        // Lewati baris kosong, baris total, atau bukan format order Shopee
+        if (!orderNoStr || orderNoStr.toLowerCase().includes("total")) continue;
 
         const existing = dbMap.get(norm(orderNoStr));
         if (!existing) { skipped++; continue; }
 
-        // Ambil Total Penghasilan
-        const incomeRaw = (
-          row["Total Penghasilan"] ??
-          row["Total penghasilan"] ??
-          row["Penghasilan"] ??
-          "0"
-        );
-        const income = Number(String(incomeRaw).replace(/[^0-9.]/g, "")) || 0;
-        const profit = income - Number(existing.hpp || 0);
+        // Ambil penghasilan — jika kolom tidak ada pakai 0
+        const incomeRaw = idxIncome >= 0 ? String(row[idxIncome] ?? "0") : "0";
+        const income  = Number(incomeRaw.replace(/[^0-9.]/g, "")) || 0;
+        const profit  = income - Number(existing.hpp || 0);
 
         const { error } = await supabase
           .from("orders")
@@ -240,16 +212,21 @@ function InputAndOrdersPage() {
           .eq("id", existing.id);
 
         if (!error) matched++;
-        else console.error("[Sync] Update error:", error.message);
+        else console.error("[Sync] Update gagal:", error.message);
       }
 
       if (matched > 0) {
-        toast.success(`✅ ${matched} pesanan berhasil diubah menjadi Selesai${skipped > 0 ? ` (${skipped} tidak cocok)` : ""}`);
+        toast.success(
+          `✅ ${matched} pesanan berhasil diubah ke Selesai` +
+          (skipped > 0 ? ` · ${skipped} tidak cocok` : "")
+        );
       } else {
         toast.error(
-          `Tidak ada pesanan cocok. Kolom CSV: ${colNames.slice(0, 6).join(", ")}. ` +
-          `Pastikan No. Pesanan sama persis.`
+          `Tidak ada pesanan cocok. ` +
+          `Contoh No. Pesanan di file vs database — cek console.`
         );
+        console.log("[Sync] Sample dari file:", allRows.slice(headerRowIdx + 1, headerRowIdx + 4).map(r => r[idxOrderNo]));
+        console.log("[Sync] Sample dari DB:", [...dbMap.keys()].slice(0, 3));
       }
 
       await load();
