@@ -116,7 +116,7 @@ function InputAndOrdersPage() {
     toast.success("Pesanan berhasil disimpan");
     if (mode === "wa") {
       const text =
-        `tanggal ${form.date}\n` +
+        `tanggal ${formatDate(form.date)}\n` +
         `nomer : ${form.nomer || "-"}\n` +
         `pesanan : ${form.item_name}\n` +
         `total Harga : ${hppNum}\n` +
@@ -365,13 +365,13 @@ function InputAndOrdersPage() {
              <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase">Preview Text WA</span>
                 <button onClick={() => {
-                   const text = `tanggal ${form.date}\nnomer : ${form.nomer || "-"}\npesanan : ${form.item_name}\ntotal Harga : ${Number(form.hpp) || 0}\nnomer pesanan : ${form.order_no}\nno resi : ${form.resi_no || "-"}`;
+                   const text = `tanggal ${formatDate(form.date)}\nnomer : ${form.nomer || "-"}\npesanan : ${form.item_name}\ntotal Harga : ${Number(form.hpp) || 0}\nnomer pesanan : ${form.order_no}\nno resi : ${form.resi_no || "-"}`;
                    navigator.clipboard.writeText(text);
                    toast.success("Teks disalin ke clipboard!");
                 }} className="text-xs font-medium text-primary hover:underline">Copy Teks</button>
              </div>
              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
-{`tanggal ${form.date}
+{`tanggal ${formatDate(form.date)}
 nomer : ${form.nomer || "-"}
 pesanan : ${form.item_name || "..."}
 total Harga : ${Number(form.hpp) || 0}
