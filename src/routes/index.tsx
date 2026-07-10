@@ -132,7 +132,7 @@ function InputAndOrdersPage() {
       const cleanCell = (c: string) => c.trim().toLowerCase().replace(/\s+/g, " ");
       const isOrderNoHeader = (c: string) => {
         const v = cleanCell(c);
-        return v === "no. pesanan" || v === "no pesanan" || v === "nomor pesanan";
+        return v === "no. pesanan" || v === "no pesanan" || v === "nomor pesanan" || v === "id pesanan/penyesuaian";
       };
 
       // ── 1. Baca file → array-of-array ──
@@ -200,7 +200,8 @@ function InputAndOrdersPage() {
         return v === "total penghasilan" ||
                v.startsWith("total penghasilan") ||
                v === "penghasilan penjual" ||
-               v === "total pendapatan";
+               v === "total pendapatan" ||
+               v === "jumlah penyelesaian pembayaran";
       });
 
       console.log(`[Sync] No. Pesanan  → col ${idxOrderNo}: "${headers[idxOrderNo]}"`);
