@@ -1,5 +1,5 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { PackagePlus, Wallet, Store, LogOut, LayoutDashboard } from "lucide-react";
+import { PackagePlus, Wallet, Store, LogOut, LayoutDashboard, Tag } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,6 +8,7 @@ const nav = [
   { to: "/", label: "Input & Pesanan", icon: PackagePlus },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/finance", label: "Keuangan", icon: Wallet },
+  { to: "/products", label: "Data Harga Produk", icon: Tag },
 ] as const;
 
 export function AppLayout({ children }: { children: ReactNode }) {
