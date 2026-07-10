@@ -66,6 +66,9 @@ function InputAndOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilterType, setDateFilterType] = useState<"all" | "today" | "month" | "custom">("all");
+  const [dateCustomStart, setDateCustomStart] = useState("");
+  const [dateCustomEnd, setDateCustomEnd] = useState("");
   const [syncing, setSyncing] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -289,8 +292,24 @@ function InputAndOrdersPage() {
       || (o.resi_no ?? "").toLowerCase().includes(q.toLowerCase())
       || o.item_name.toLowerCase().includes(q.toLowerCase());
     const matchS = statusFilter === "all" || o.status === statusFilter;
-    return matchQ && matchS;
-  }), [orders, q, statusFilter]);
+    
+    let matchD = true;
+    if (dateFilterType === "today") {
+      matchD = o.date === today();
+    } else if (dateFilterType === "month") {
+      const currentMonth = today().slice(0, 7); // "YYYY-MM"
+      matchD = o.date.startsWith(currentMonth);
+    } else if (dateFilterType === "custom") {
+      if (dateCustomStart && o.date < dateCustomStart) matchD = false;
+      if (dateCustomEnd && o.date > dateCustomEnd) matchD = false;
+    }
+
+    return matchQ && matchS && matchD;
+  }).sort((a, b) => {
+    // Memastikan urutan by date descending di frontend
+    if (a.date !== b.date) return b.date > a.date ? 1 : -1;
+    return 0;
+  }), [orders, q, statusFilter, dateFilterType, dateCustomStart, dateCustomEnd]);
 
   return (
     <AppLayout>
@@ -322,23 +341,44 @@ function InputAndOrdersPage() {
             <input value={form.catatan} onChange={(e) => upd("catatan", e.target.value)} placeholder="Catatan opsional..." className={inputCls} />
           </Field>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={() => handleSubmit("save")}
-            disabled={saving !== null}
-            className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-semibold text-foreground shadow-sm transition hover:bg-accent disabled:opacity-60"
-          >
-            {saving === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Simpan Saja
-          </button>
-          <button
-            onClick={() => handleSubmit("wa")}
-            disabled={saving !== null}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-60"
-          >
-            {saving === "wa" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Simpan & Kirim WA
-          </button>
+        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleSubmit("save")}
+              disabled={saving !== null}
+              className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-semibold text-foreground shadow-sm transition hover:bg-accent disabled:opacity-60"
+            >
+              {saving === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Simpan Saja
+            </button>
+            <button
+              onClick={() => handleSubmit("wa")}
+              disabled={saving !== null}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-60"
+            >
+              {saving === "wa" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Simpan & Kirim WA
+            </button>
+          </div>
+          
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+             <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase">Preview Text WA</span>
+                <button onClick={() => {
+                   const text = `tanggal ${form.date}\nnomer : ${form.nomer || "-"}\npesanan : ${form.item_name}\ntotal Harga : ${Number(form.hpp) || 0}\nnomer pesanan : ${form.order_no}\nno resi : ${form.resi_no || "-"}`;
+                   navigator.clipboard.writeText(text);
+                   toast.success("Teks disalin ke clipboard!");
+                }} className="text-xs font-medium text-primary hover:underline">Copy Teks</button>
+             </div>
+             <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
+{`tanggal ${form.date}
+nomer : ${form.nomer || "-"}
+pesanan : ${form.item_name || "..."}
+total Harga : ${Number(form.hpp) || 0}
+nomer pesanan : ${form.order_no || "..."}
+no resi : ${form.resi_no || "-"}`}
+             </pre>
+          </div>
         </div>
       </div>
 
@@ -358,6 +398,21 @@ function InputAndOrdersPage() {
           <option value="all">Semua status</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        
+        <select value={dateFilterType} onChange={(e) => setDateFilterType(e.target.value as any)} className="rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus:border-primary">
+          <option value="all">Semua Waktu</option>
+          <option value="today">Hari Ini</option>
+          <option value="month">Bulan Ini</option>
+          <option value="custom">Pilih Manual...</option>
+        </select>
+
+        {dateFilterType === "custom" && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={dateCustomStart} onChange={(e) => setDateCustomStart(e.target.value)} className="rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus:border-primary" />
+            <span className="text-muted-foreground">-</span>
+            <input type="date" value={dateCustomEnd} onChange={(e) => setDateCustomEnd(e.target.value)} className="rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus:border-primary" />
+          </div>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
