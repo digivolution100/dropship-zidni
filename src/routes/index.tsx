@@ -193,9 +193,15 @@ function InputAndOrdersPage() {
 
       // ── 3. Index kolom ──
       const idxOrderNo = headers.findIndex(isOrderNoHeader);
-      const idxIncome  = headers.findIndex((h) =>
-        cleanCell(h).includes("penghasilan") && !cleanCell(h).includes("subtotal")
-      );
+      const idxIncome  = headers.findIndex((h) => {
+        const v = cleanCell(h);
+        // Harus persis "total penghasilan" atau diawali "total penghasilan"
+        // Hindari kolom seperti "Biaya ... (dari Penghasilan)"
+        return v === "total penghasilan" ||
+               v.startsWith("total penghasilan") ||
+               v === "penghasilan penjual" ||
+               v === "total pendapatan";
+      });
 
       console.log(`[Sync] No. Pesanan  → col ${idxOrderNo}: "${headers[idxOrderNo]}"`);
       console.log(`[Sync] Penghasilan  → col ${idxIncome}: "${headers[idxIncome]}"`);
