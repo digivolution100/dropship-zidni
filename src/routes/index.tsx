@@ -129,28 +129,74 @@ function InputAndOrdersPage() {
   async function handleFile(f: File) {
     setSyncing(true);
     try {
-      // Parse file
-      let rows: any[] = [];
+      let rows: Record<string, string>[] = [];
+
       if (f.name.toLowerCase().endsWith(".csv")) {
         const text = await f.text();
-        const result = Papa.parse(text, { header: true, skipEmptyLines: true });
-        rows = result.data as any[];
+
+        // Parse tanpa header dulu → dapat raw array per baris
+        const raw = Papa.parse<string[]>(text, { header: false, skipEmptyLines: true });
+        const allRows = raw.data;
+
+        // Cari baris yang mengandung "No. Pesanan" sebagai header sebenarnya
+        const headerRowIdx = allRows.findIndex((row) =>
+          row.some((cell) => String(cell).trim().toLowerCase().includes("no. pesanan") ||
+                             String(cell).trim().toLowerCase().includes("no pesanan"))
+        );
+
+        if (headerRowIdx === -1) {
+          const sample = allRows.slice(0, 3).map(r => r.join(" | ")).join("\n");
+          toast.error(`Kolom "No. Pesanan" tidak ditemukan. 3 baris pertama:\n${sample}`);
+          return;
+        }
+
+        // Ambil header dari baris yang ditemukan
+        const headers = allRows[headerRowIdx].map((h) => String(h).trim());
+        // Baris data = semua baris setelah header
+        const dataRows = allRows.slice(headerRowIdx + 1);
+
+        // Jadikan object per baris
+        rows = dataRows.map((row) => {
+          const obj: Record<string, string> = {};
+          headers.forEach((h, i) => { obj[h] = String(row[i] ?? "").trim(); });
+          return obj;
+        });
+
       } else {
+        // Excel: sama — cari baris header dulu
         const buf = await f.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
-        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const allRows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as string[][];
+
+        const headerRowIdx = allRows.findIndex((row) =>
+          row.some((cell) => String(cell).trim().toLowerCase().includes("no. pesanan") ||
+                             String(cell).trim().toLowerCase().includes("no pesanan"))
+        );
+
+        if (headerRowIdx === -1) {
+          toast.error(`Kolom "No. Pesanan" tidak ditemukan di file Excel.`);
+          return;
+        }
+
+        const headers = allRows[headerRowIdx].map((h) => String(h).trim());
+        const dataRows = allRows.slice(headerRowIdx + 1);
+        rows = dataRows.map((row) => {
+          const obj: Record<string, string> = {};
+          headers.forEach((h, i) => { obj[h] = String(row[i] ?? "").trim(); });
+          return obj;
+        });
       }
 
       if (rows.length === 0) {
-        toast.error("File kosong atau format tidak dikenali");
+        toast.error("Tidak ada data setelah header ditemukan.");
         return;
       }
 
-      // Tampilkan kolom yang ditemukan untuk debug
-      const colNames = Object.keys(rows[0] ?? {});
-      console.log("[Sync] Kolom CSV:", colNames);
+      const colNames = Object.keys(rows[0]);
+      console.log("[Sync] Header sebenarnya:", colNames);
 
-      // Fetch orders langsung dari DB (hindari stale state)
+      // Fetch orders dari DB
       const { data: freshOrders, error: fetchErr } = await supabase
         .from("orders")
         .select("id, order_no, hpp");
@@ -159,59 +205,33 @@ function InputAndOrdersPage() {
         return;
       }
 
-      // Normalisasi: hapus semua spasi & ubah ke uppercase
       const norm = (s: string) => String(s ?? "").replace(/\s+/g, "").toUpperCase();
-
-      // Buat map: normalized_order_no → { id, hpp }
       const dbMap = new Map(freshOrders.map((o) => [norm(o.order_no), o]));
-
-      // Cari kolom order number di CSV (case-insensitive partial match)
-      const findCol = (row: any, keywords: string[]): string => {
-        for (const key of Object.keys(row)) {
-          const k = key.trim().toLowerCase();
-          for (const kw of keywords) {
-            if (k === kw.toLowerCase()) return String(row[key] ?? "").trim();
-          }
-        }
-        // fallback: partial match
-        for (const key of Object.keys(row)) {
-          const k = key.trim().toLowerCase();
-          for (const kw of keywords) {
-            if (k.includes(kw.toLowerCase()) || kw.toLowerCase().includes(k)) {
-              return String(row[key] ?? "").trim();
-            }
-          }
-        }
-        return "";
-      };
 
       let matched = 0;
       let skipped = 0;
 
       for (const row of rows) {
-        // Ambil No. Pesanan — prioritaskan "No. Pesanan" persis
-        const orderNo =
+        // Ambil No. Pesanan
+        const orderNoStr = (
           row["No. Pesanan"] ??
-          row["No.Pesanan"] ??
           row["No Pesanan"] ??
           row["Nomor Pesanan"] ??
-          findCol(row, ["no. pesanan", "nomor pesanan", "no pesanan"]);
-
-        const orderNoStr = String(orderNo ?? "").trim();
+          ""
+        ).trim();
         if (!orderNoStr) continue;
 
         const existing = dbMap.get(norm(orderNoStr));
         if (!existing) { skipped++; continue; }
 
-        // Ambil Total Penghasilan — prioritaskan kolom eksak
-        const incomeRaw =
+        // Ambil Total Penghasilan
+        const incomeRaw = (
           row["Total Penghasilan"] ??
           row["Total penghasilan"] ??
-          row["total penghasilan"] ??
           row["Penghasilan"] ??
-          findCol(row, ["total penghasilan", "penghasilan"]);
-
-        const income = Number(String(incomeRaw ?? "0").replace(/[^0-9.]/g, "")) || 0;
+          "0"
+        );
+        const income = Number(String(incomeRaw).replace(/[^0-9.]/g, "")) || 0;
         const profit = income - Number(existing.hpp || 0);
 
         const { error } = await supabase
@@ -227,9 +247,8 @@ function InputAndOrdersPage() {
         toast.success(`✅ ${matched} pesanan berhasil diubah menjadi Selesai${skipped > 0 ? ` (${skipped} tidak cocok)` : ""}`);
       } else {
         toast.error(
-          `Tidak ada pesanan yang cocok. ` +
-          `Kolom CSV: ${colNames.slice(0, 5).join(", ")}. ` +
-          `Pastikan No. Pesanan di CSV sama persis dengan yang diinput.`
+          `Tidak ada pesanan cocok. Kolom CSV: ${colNames.slice(0, 6).join(", ")}. ` +
+          `Pastikan No. Pesanan sama persis.`
         );
       }
 
