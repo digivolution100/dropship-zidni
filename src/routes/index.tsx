@@ -26,6 +26,7 @@ type Order = {
   income: number;
   profit: number;
   catatan: string | null;
+  seq_no?: number;
 };
 
 const STATUSES = [
@@ -287,8 +288,20 @@ function InputAndOrdersPage() {
     load();
   }
 
+  // ── Calculate Sequential Numbers (Per Month) ──
+  const ordersWithSeq = useMemo(() => {
+    const monthCounts: Record<string, number> = {};
+    // Process oldest to newest to assign sequential numbers
+    return [...orders].reverse().map((o) => {
+      const month = o.date.slice(0, 7); // YYYY-MM
+      if (!monthCounts[month]) monthCounts[month] = 0;
+      monthCounts[month]++;
+      return { ...o, seq_no: monthCounts[month] };
+    }).reverse(); // Revert back to newest first
+  }, [orders]);
+
   // ── Filter ──
-  const filtered = useMemo(() => orders.filter((o) => {
+  const filtered = useMemo(() => ordersWithSeq.filter((o) => {
     const matchQ = !q
       || o.order_no.toLowerCase().includes(q.toLowerCase())
       || (o.resi_no ?? "").toLowerCase().includes(q.toLowerCase())
@@ -422,6 +435,7 @@ no resi : ${form.resi_no || "-"}`}
           <table className="w-full text-sm">
             <thead className="bg-secondary text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
+                <th className="px-4 py-3 w-12 text-center">No.</th>
                 <th className="px-4 py-3">Tanggal</th>
                 <th className="px-4 py-3">Nomer</th>
                 <th className="px-4 py-3">No. Pesanan</th>
@@ -437,13 +451,14 @@ no resi : ${form.resi_no || "-"}`}
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={11} className="px-4 py-10 text-center text-muted-foreground"><Loader2 className="inline h-5 w-5 animate-spin mr-2" />Memuat data…</td></tr>
+                <tr><td colSpan={12} className="px-4 py-10 text-center text-muted-foreground"><Loader2 className="inline h-5 w-5 animate-spin mr-2" />Memuat data…</td></tr>
               )}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">Tidak ada pesanan ditemukan</td></tr>
+                <tr><td colSpan={12} className="px-4 py-10 text-center text-muted-foreground">Tidak ada pesanan ditemukan</td></tr>
               )}
               {filtered.map((o) => (
                 <tr key={o.id} className="border-t border-border hover:bg-secondary/40 transition-colors">
+                  <td className="whitespace-nowrap px-4 py-3 text-sm text-center font-medium text-muted-foreground">{o.seq_no}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">{formatDate(o.date)}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">{o.nomer ?? "-"}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{o.order_no}</td>
