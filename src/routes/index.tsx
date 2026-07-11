@@ -110,6 +110,8 @@ function InputAndOrdersPage() {
       resi_no: form.resi_no || null,
       catatan: form.catatan || null,
       status: "Menunggu Selesai",
+      income: 0,
+      profit: -hppNum,
     });
     setSaving(null);
     if (error) { toast.error(error.message); return; }
