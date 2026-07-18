@@ -4,7 +4,7 @@ import { AppLayout, PageHeader, formatIDR } from "@/components/app-layout";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Send, Loader2, Upload, Search, CheckCircle2,
-  X, Pencil, Trash2, AlertTriangle, Check, Save
+  X, Pencil, Trash2, AlertTriangle, Check, Save, ChevronDown
 } from "lucide-react";
 import { toast } from "sonner";
 import Papa from "papaparse";
@@ -60,13 +60,14 @@ function formatDate(dateStr: string): string {
 function InputAndOrdersPage() {
   // ── Form input ──
   const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState<"save" | "wa" | null>(null);
+  const [saving, setSaving] = useState<"copy_save" | "copy_save_wa" | null>(null);
 
   // ── Orders list ──
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [dateFilterType, setDateFilterType] = useState<"all" | "today" | "month" | "custom">("all");
   const [dateCustomStart, setDateCustomStart] = useState("");
   const [dateCustomEnd, setDateCustomEnd] = useState("");
@@ -95,13 +96,30 @@ function InputAndOrdersPage() {
   useEffect(() => { load(); }, []);
 
   // ── Submit form ──
-  async function handleSubmit(mode: "save" | "wa") {
+  async function handleSubmit(mode: "copy_save" | "copy_save_wa") {
     if (!form.item_name || !form.order_no) {
       toast.error("Nama produk dan nomor pesanan wajib diisi");
       return;
     }
     setSaving(mode);
     const hppNum = Number(form.hpp) || 0;
+    
+    // Copy Text
+    const textToCopy =
+      `tanggal ${formatDate(form.date)}\n` +
+      `nomer : ${form.nomer || "-"}\n` +
+      `pesanan : ${form.item_name}\n` +
+      `total Harga : ${hppNum}\n` +
+      `nomer pesanan : ${form.order_no}\n` +
+      `no resi : ${form.resi_no || "-"}`;
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      toast.success("Teks berhasil disalin!");
+    } catch (err) {
+      console.error("Gagal menyalin teks", err);
+    }
+
     const { error } = await supabase.from("orders").insert({
       date: form.date,
       nomer: form.nomer || null,
@@ -117,15 +135,8 @@ function InputAndOrdersPage() {
     setSaving(null);
     if (error) { toast.error(error.message); return; }
     toast.success("Pesanan berhasil disimpan");
-    if (mode === "wa") {
-      const text =
-        `tanggal ${formatDate(form.date)}\n` +
-        `nomer : ${form.nomer || "-"}\n` +
-        `pesanan : ${form.item_name}\n` +
-        `total Harga : ${hppNum}\n` +
-        `nomer pesanan : ${form.order_no}\n` +
-        `no resi : ${form.resi_no || "-"}`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    if (mode === "copy_save_wa") {
+      window.open(`https://wa.me/?text=${encodeURIComponent(textToCopy)}`, "_blank");
     }
     setForm(emptyForm());
     load();
@@ -306,7 +317,7 @@ function InputAndOrdersPage() {
       || o.order_no.toLowerCase().includes(q.toLowerCase())
       || (o.resi_no ?? "").toLowerCase().includes(q.toLowerCase())
       || o.item_name.toLowerCase().includes(q.toLowerCase());
-    const matchS = statusFilter === "all" || o.status === statusFilter;
+    const matchS = statusFilters.length === 0 || statusFilters.includes(o.status);
     
     let matchD = true;
     if (dateFilterType === "today") {
@@ -359,31 +370,26 @@ function InputAndOrdersPage() {
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => handleSubmit("save")}
+              onClick={() => handleSubmit("copy_save")}
               disabled={saving !== null}
               className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-semibold text-foreground shadow-sm transition hover:bg-accent disabled:opacity-60"
             >
-              {saving === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Simpan Saja
+              {saving === "copy_save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Copy Teks & Simpan
             </button>
             <button
-              onClick={() => handleSubmit("wa")}
+              onClick={() => handleSubmit("copy_save_wa")}
               disabled={saving !== null}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-60"
             >
-              {saving === "wa" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Simpan & Kirim WA
+              {saving === "copy_save_wa" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Copy Teks, Simpan & Kirim WA
             </button>
           </div>
           
           <div className="rounded-lg border border-border bg-muted/30 p-3">
              <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase">Preview Text WA</span>
-                <button onClick={() => {
-                   const text = `tanggal ${formatDate(form.date)}\nnomer : ${form.nomer || "-"}\npesanan : ${form.item_name}\ntotal Harga : ${Number(form.hpp) || 0}\nnomer pesanan : ${form.order_no}\nno resi : ${form.resi_no || "-"}`;
-                   navigator.clipboard.writeText(text);
-                   toast.success("Teks disalin ke clipboard!");
-                }} className="text-xs font-medium text-primary hover:underline">Copy Teks</button>
              </div>
              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
 {`tanggal ${formatDate(form.date)}
@@ -409,10 +415,48 @@ no resi : ${form.resi_no || "-"}`}
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari pesanan..." className="w-full rounded-lg border border-input bg-card py-2 pl-9 pr-3 text-sm outline-none focus:border-primary" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus:border-primary">
-          <option value="all">Semua status</option>
-          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <div className="relative">
+          <button 
+            onClick={() => setStatusDropdownOpen(!statusDropdownOpen)} 
+            className="flex items-center gap-2 rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus:border-primary hover:bg-accent transition"
+          >
+            {statusFilters.length === 0 ? "Semua status" : `${statusFilters.length} status terpilih`}
+            <ChevronDown className="h-4 w-4 opacity-50" />
+          </button>
+          
+          {statusDropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setStatusDropdownOpen(false)} />
+              <div className="absolute left-0 top-full mt-1 w-56 rounded-md border border-border bg-card shadow-md z-50 p-2 text-sm">
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded cursor-pointer transition">
+                    <input 
+                      type="checkbox" 
+                      checked={statusFilters.length === 0} 
+                      onChange={() => setStatusFilters([])} 
+                      className="rounded border-primary accent-primary" 
+                    />
+                    Semua status
+                  </label>
+                  {STATUSES.map(s => (
+                    <label key={s} className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded cursor-pointer transition">
+                      <input 
+                        type="checkbox" 
+                        checked={statusFilters.includes(s)} 
+                        onChange={(e) => {
+                          if (e.target.checked) setStatusFilters(prev => [...prev, s]);
+                          else setStatusFilters(prev => prev.filter(p => p !== s));
+                        }} 
+                        className="rounded border-primary accent-primary" 
+                      />
+                      {s}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         
         <select value={dateFilterType} onChange={(e) => setDateFilterType(e.target.value as any)} className="rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus:border-primary">
           <option value="all">Semua Waktu</option>
