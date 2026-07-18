@@ -335,7 +335,7 @@ function InputAndOrdersPage() {
     // Memastikan urutan by date descending di frontend
     if (a.date !== b.date) return b.date > a.date ? 1 : -1;
     return 0;
-  }), [orders, q, statusFilter, dateFilterType, dateCustomStart, dateCustomEnd]);
+  }), [ordersWithSeq, q, statusFilters, dateFilterType, dateCustomStart, dateCustomEnd]);
 
   return (
     <AppLayout>
