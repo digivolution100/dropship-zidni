@@ -45,7 +45,13 @@ const statusColor: Record<string, string> = {
   "Komplain pengembalian": "bg-slate-200 text-slate-700 border-slate-300",
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 const emptyForm = () => ({ date: today(), nomer: "", order_no: "", item_name: "", hpp: "", resi_no: "", catatan: "" });
 
 const inputCls = "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20";
