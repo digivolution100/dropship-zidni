@@ -218,19 +218,50 @@ function InputAndOrdersPage() {
       const idxOrderNo = headers.findIndex(isOrderNoHeader);
       const idxIncome  = headers.findIndex((h) => {
         const v = cleanCell(h);
-        if (v.includes("biaya") || v.includes("potongan") || v.includes("diskon") || v.includes("ongkir") || v.includes("voucher") || v.includes("komisi")) {
+        if (
+          v.includes("biaya") ||
+          v.includes("potongan") ||
+          v.includes("diskon") ||
+          v.includes("ongkir") ||
+          v.includes("voucher") ||
+          v.includes("komisi") ||
+          v.includes("metode") ||
+          v.includes("waktu") ||
+          v.includes("status") ||
+          v.includes("kuantitas") ||
+          v.includes("jumlah produk") ||
+          v.includes("berat") ||
+          v.includes("nomor") ||
+          v === "no." ||
+          v === "no"
+        ) {
           return false;
         }
-        return v.includes("penghasilan") ||
-               v.includes("pendapatan") ||
-               v.includes("penyelesaian pembayaran") ||
-               v === "total pembayaran" ||
-               v.includes("nilai pesanan") ||
-               v === "total" ||
-               v === "total (rp)" ||
-               v.includes("harga jual");
+
+        return (
+          v.includes("penghasilan") ||
+          v.includes("pendapatan") ||
+          v.includes("penyelesaian") ||
+          v.includes("pembayaran") ||
+          v.includes("hasil") ||
+          v.includes("dilepaskan") ||
+          v.includes("diterima") ||
+          v.includes("saldo") ||
+          v.includes("settlement") ||
+          v.includes("payout") ||
+          v.includes("release") ||
+          v.includes("nett") ||
+          v.includes("net") ||
+          v.includes("nilai") ||
+          v.includes("harga jual") ||
+          v === "total" ||
+          v === "total (rp)" ||
+          v === "jumlah" ||
+          v === "jumlah (rp)"
+        );
       });
 
+      console.log(`[Sync] All Headers:`, headers);
       console.log(`[Sync] No. Pesanan  → col ${idxOrderNo}: "${headers[idxOrderNo]}"`);
       console.log(`[Sync] Penghasilan  → col ${idxIncome}: "${idxIncome >= 0 ? headers[idxIncome] : 'TIDAK DITEMUKAN'}"`);
 
@@ -240,7 +271,7 @@ function InputAndOrdersPage() {
       }
 
       if (idxIncome === -1) {
-        toast.warning(`Kolom penghasilan tidak terdeteksi otomatis. Sistem mencocokkan status saja. Headers: ${headers.slice(0, 6).join(" | ")}`);
+        toast.warning(`Kolom penghasilan tidak terdeteksi. Cek F12 console. Header terbaca: ${headers.filter(Boolean).slice(0, 8).join(" | ")}`);
       }
 
       // Helper parser angka Rupiah
