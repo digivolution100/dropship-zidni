@@ -218,22 +218,53 @@ function InputAndOrdersPage() {
       const idxOrderNo = headers.findIndex(isOrderNoHeader);
       const idxIncome  = headers.findIndex((h) => {
         const v = cleanCell(h);
-        // Harus persis "total penghasilan" atau diawali "total penghasilan"
-        // Hindari kolom seperti "Biaya ... (dari Penghasilan)"
-        return v === "total penghasilan" ||
-               v.startsWith("total penghasilan") ||
-               v === "penghasilan penjual" ||
-               v === "total pendapatan" ||
-               v === "jumlah penyelesaian pembayaran";
+        if (v.includes("biaya") || v.includes("potongan") || v.includes("diskon") || v.includes("ongkir") || v.includes("voucher") || v.includes("komisi")) {
+          return false;
+        }
+        return v.includes("penghasilan") ||
+               v.includes("pendapatan") ||
+               v.includes("penyelesaian pembayaran") ||
+               v === "total pembayaran" ||
+               v.includes("nilai pesanan") ||
+               v === "total" ||
+               v === "total (rp)" ||
+               v.includes("harga jual");
       });
 
       console.log(`[Sync] No. Pesanan  → col ${idxOrderNo}: "${headers[idxOrderNo]}"`);
-      console.log(`[Sync] Penghasilan  → col ${idxIncome}: "${headers[idxIncome]}"`);
+      console.log(`[Sync] Penghasilan  → col ${idxIncome}: "${idxIncome >= 0 ? headers[idxIncome] : 'TIDAK DITEMUKAN'}"`);
 
       if (idxOrderNo === -1) {
         toast.error(`Kolom No. Pesanan tidak ada. Headers: ${headers.slice(0,8).join(" | ")}`);
         return;
       }
+
+      if (idxIncome === -1) {
+        toast.warning(`Kolom penghasilan tidak terdeteksi otomatis. Sistem mencocokkan status saja. Headers: ${headers.slice(0, 6).join(" | ")}`);
+      }
+
+      // Helper parser angka Rupiah
+      const parseIDR = (valStr: string): number => {
+        if (!valStr) return 0;
+        let s = String(valStr).trim().replace(/[^0-9.,-]/g, "");
+        if (!s) return 0;
+        if (s.includes(".") && s.includes(",")) {
+          s = s.replace(/\./g, "").replace(",", ".");
+        } else if (s.includes(".")) {
+          const parts = s.split(".");
+          if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+            s = s.replace(/\./g, "");
+          }
+        } else if (s.includes(",")) {
+          const parts = s.split(",");
+          if (parts.length === 2 && parts[1].length <= 2) {
+            s = parts[0];
+          } else {
+            s = s.replace(/,/g, "");
+          }
+        }
+        return Number(s) || 0;
+      };
 
       // ── 4. Fetch pesanan dari DB ──
       const { data: freshOrders, error: fetchErr } = await supabase
@@ -257,7 +288,7 @@ function InputAndOrdersPage() {
         if (!existing) { skipped++; continue; }
 
         const incomeRaw = idxIncome >= 0 ? String(row[idxIncome] ?? "0") : "0";
-        const income    = Number(incomeRaw.replace(/[^0-9.]/g, "")) || 0;
+        const income    = parseIDR(incomeRaw);
         const profit    = income - Number(existing.hpp || 0);
 
         const { error } = await supabase
