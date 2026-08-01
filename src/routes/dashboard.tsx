@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AppLayout, PageHeader, formatIDR } from "@/components/app-layout";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingUp, ShoppingBag, Hourglass, TrendingDown, AlertCircle } from "lucide-react";
+import { TrendingUp, ShoppingBag, Hourglass, TrendingDown, AlertCircle, Receipt } from "lucide-react";
 import {
   ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -75,12 +75,13 @@ function DashboardPage() {
     const selesai = mo.filter(o => o.status === "Selesai");
     const totalPesanan   = mo.length;
     const totalPenghasilan = selesai.reduce((a, o) => a + Number(o.income), 0);
+    const totalHPP       = selesai.reduce((a, o) => a + Number(o.hpp), 0);
     const totalProfit    = selesai.reduce((a, o) => a + Number(o.profit), 0);
     const pesananPending = mo.filter(o => o.status === "Menunggu Selesai" || o.status === "Diterima pembeli belum cair").length;
     const rtsList        = mo.filter(o => o.status === "GAGAL COD/RTS");
     const totalRTS       = rtsList.length;
     const totalRTSLoss   = rtsList.reduce((a, o) => a + Math.abs(Number(o.profit)), 0);
-    return { totalPesanan, totalPenghasilan, totalProfit, pesananPending, totalRTS, totalRTSLoss };
+    return { totalPesanan, totalPenghasilan, totalHPP, totalProfit, pesananPending, totalRTS, totalRTSLoss };
   }, [orders, filterMonth]);
 
   // ── Trend 6 bulan ──
@@ -138,12 +139,13 @@ function DashboardPage() {
         </div>
       </div>
 
-      {/* ── KPI Cards (5 cards) ── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {/* ── KPI Cards (6 cards) ── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <KPICard label="Total Pesanan"     value={String(kpi.totalPesanan)}           icon={ShoppingBag}  color="bg-sky-50 text-sky-600"     loading={loading} suffix="pesanan" />
         <KPICard label="Total Penghasilan" value={formatIDR(kpi.totalPenghasilan)}    icon={TrendingUp}   color="bg-emerald-50 text-emerald-600" loading={loading} />
+        <KPICard label="Total HPP (Modal)" value={formatIDR(kpi.totalHPP)}            icon={Receipt}      color="bg-amber-50 text-amber-600"     loading={loading} />
         <KPICard label="Total Profit"      value={formatIDR(kpi.totalProfit)}         icon={TrendingUp}   color="bg-violet-50 text-violet-600"   loading={loading} />
-        <KPICard label="Pesanan Pending"   value={String(kpi.pesananPending)}         icon={Hourglass}    color="bg-amber-50 text-amber-600"    loading={loading} suffix="pesanan" />
+        <KPICard label="Pesanan Pending"   value={String(kpi.pesananPending)}         icon={Hourglass}    color="bg-blue-50 text-blue-600"      loading={loading} suffix="pesanan" />
         <KPICard
           label="Total RTS / Gagal"
           value={`${kpi.totalRTS} pesanan`}
