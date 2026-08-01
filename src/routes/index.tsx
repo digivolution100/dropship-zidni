@@ -265,12 +265,16 @@ function InputAndOrdersPage() {
       console.log(`[Sync] Penghasilan  → col ${idxIncome}: "${idxIncome >= 0 ? headers[idxIncome] : 'TIDAK DITEMUKAN'}"`);
 
       if (idxOrderNo === -1) {
-        toast.error(`Kolom No. Pesanan tidak ada. Headers: ${headers.slice(0,8).join(" | ")}`);
+        toast.error(`Kolom No. Pesanan tidak ada. Headers: ${headers.slice(0,8).join(" | ")}`, { duration: 10000 });
         return;
       }
 
       if (idxIncome === -1) {
-        toast.warning(`Kolom penghasilan tidak terdeteksi. Cek F12 console. Header terbaca: ${headers.filter(Boolean).slice(0, 8).join(" | ")}`);
+        toast.error(
+          `❌ Gagal Sinkron: Kolom Penghasilan/Jumlah tidak ditemukan di file CSV. Format CSV mungkin telah berubah. Headers: ${headers.filter(Boolean).slice(0, 8).join(" | ")}`,
+          { duration: 12000 }
+        );
+        return;
       }
 
       // Helper parser angka Rupiah
@@ -333,14 +337,15 @@ function InputAndOrdersPage() {
       if (matched > 0) {
         toast.success(
           `✅ ${matched} pesanan berhasil diubah ke Selesai` +
-          (skipped > 0 ? ` · ${skipped} tidak cocok` : "")
+          (skipped > 0 ? ` · ${skipped} tidak cocok` : ""),
+          { duration: 8000 }
         );
       } else {
         const sampleFile = allRows.slice(headerRowIdx + 1, headerRowIdx + 4).map(r => r[idxOrderNo]).filter(Boolean);
         const sampleDb   = [...dbMap.keys()].slice(0, 3);
         console.log("[Sync] Sample No. Pesanan dari file:", sampleFile);
         console.log("[Sync] Sample No. Pesanan dari DB  :", sampleDb);
-        toast.error("Tidak ada pesanan cocok. Cek F12 console → 'Sample No. Pesanan' untuk perbandingan.");
+        toast.error("Tidak ada pesanan cocok. Cek F12 console → 'Sample No. Pesanan' untuk perbandingan.", { duration: 10000 });
       }
 
       await load();
