@@ -227,7 +227,6 @@ function InputAndOrdersPage() {
           v.includes("komisi") ||
           v.includes("metode") ||
           v.includes("waktu") ||
-          v.includes("status") ||
           v.includes("kuantitas") ||
           v.includes("jumlah produk") ||
           v.includes("berat") ||
@@ -239,6 +238,8 @@ function InputAndOrdersPage() {
         }
 
         return (
+          v === "jumlah" ||
+          v === "jumlah (rp)" ||
           v.includes("penghasilan") ||
           v.includes("pendapatan") ||
           v.includes("penyelesaian") ||
@@ -255,9 +256,7 @@ function InputAndOrdersPage() {
           v.includes("nilai") ||
           v.includes("harga jual") ||
           v === "total" ||
-          v === "total (rp)" ||
-          v === "jumlah" ||
-          v === "jumlah (rp)"
+          v === "total (rp)"
         );
       });
 
